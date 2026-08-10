@@ -13,6 +13,7 @@ const HARVEST_MIN_SPAN: i64 = 900; // closed window must span this to yield a ra
 const HARVEST_MIN_PCT: f64 = 2.0;
 const RATES_KEEP: usize = 20;
 const GPU_REFRESH: i64 = 10; // nvidia-smi is re-queried at most this often
+const CTX_MIN: i64 = 50; // the CTX field stays hidden below this usage
 const URGENT_SECS: i64 = 15 * 60; // a 5h depletion ETA closer than this is flagged
 const URGENT: &str = "\x1b[91m"; // bright-red signal color on the ETA clock time
 const FG_RESET: &str = "\x1b[39m"; // reset foreground only, preserving surrounding bold
@@ -444,8 +445,12 @@ fn main() {
     let mut ident = String::new();
     let mut host = String::new();
 
-    if let Some(p) = fval(&v, &["context_window", "used_percentage"]) {
-        ctx.push_str(&format!("CTX {}", gauge(p.round() as i64)));
+    // context is only worth screen space once it starts constraining the session
+    if let Some(p) = fval(&v, &["context_window", "used_percentage"])
+        .map(|p| p.round() as i64)
+        .filter(|&p| p >= CTX_MIN)
+    {
+        ctx.push_str(&format!("CTX {}", gauge(p)));
     }
 
     if let Some(cwd) = cwd {

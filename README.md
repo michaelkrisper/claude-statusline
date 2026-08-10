@@ -12,7 +12,7 @@ account, rate-limit consumption — and **predicts when your tokens will run out
 your live burn rate and your usage history.
 
 ```
-09:48 | CTX ◔ SESSION ◕ 66% (~20:29 / 23:52) ~/projects/foo you Fable 5 high | DISK 21G CPU ○ RAM ◔ GPU ○ VRAM ◔
+09:48 | CTX ◑ SESSION ◕ 66% (~20:29 / 23:52) ~/projects/foo you Fable 5 high | DISK 21G CPU ○ RAM ◔ GPU ○ VRAM ◔
 ```
 
 The clock leads, followed by two ` | `-separated blocks: what this session is spending
@@ -24,7 +24,7 @@ unavailable disappears together with its separator.
 | Field | Source |
 |---|---|
 | `09:48` | current local time |
-| `CTX ◔` | context window usage of the current session |
+| `CTX ◑` | context window usage of the current session — hidden below 50%, where it is not yet a constraint |
 | `SESSION ◕ 66% (…)` | 5 h rate-limit usage with depletion forecast (see below) |
 | `~/projects/foo` | project directory |
 | `you` | active Claude account — the part before the `@` of the signed-in email |
