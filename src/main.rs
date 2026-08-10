@@ -17,6 +17,19 @@ const URGENT_SECS: i64 = 15 * 60; // a 5h depletion ETA closer than this is flag
 const URGENT: &str = "\x1b[91m"; // bright-red signal color on the ETA clock time
 const FG_RESET: &str = "\x1b[39m"; // reset foreground only, preserving surrounding bold
 
+// quarter-filled circle in a green/yellow/red tint, so a load percentage reads at a
+// glance before the digits are parsed. Foreground-only reset keeps surrounding bold.
+fn gauge(pct: i64) -> String {
+    let p = pct.clamp(0, 100);
+    let glyph = ['○', '◔', '◑', '◕', '●'][((p as f64) / 25.0).round() as usize];
+    let color = match p {
+        ..60 => "\x1b[32m",
+        60..85 => "\x1b[33m",
+        _ => "\x1b[31m",
+    };
+    format!("{color}{glyph}{FG_RESET}")
+}
+
 fn fval(v: &Value, path: &[&str]) -> Option<f64> {
     path.iter().try_fold(v, |acc, k| acc.get(k))?.as_f64()
 }
@@ -419,19 +432,25 @@ fn main() {
         .and_then(meminfo_pct);
     let mut sys = String::new();
     if let Some(p) = cpu {
-        sys.push_str(&format!("CPU {p}%"));
+        sys.push_str(&format!("CPU {} {p}%", gauge(p)));
     }
     if let Some(p) = ram {
         sys.push_str(&format!(
-            "{}RAM {p}%",
-            if sys.is_empty() { "" } else { " " }
+            "{}RAM {} {p}%",
+            if sys.is_empty() { "" } else { " " },
+            gauge(p)
         ));
     }
     if !sys.is_empty() {
         out.push_str(&format!("{}{sys}", sep(&out)));
     }
     if let Some((gpu, vram)) = state.as_deref().and_then(|d| gpu_stats(d, now)) {
-        out.push_str(&format!("{}GPU {gpu}% VRAM {vram}%", sep(&out)));
+        out.push_str(&format!(
+            "{}GPU {} {gpu}% VRAM {} {vram}%",
+            sep(&out),
+            gauge(gpu),
+            gauge(vram)
+        ));
     }
     if let Some(free) = disk_free(cwd.unwrap_or("/")) {
         out.push_str(&format!("{}DISK {}", sep(&out), fmt_bytes(free)));
@@ -450,7 +469,8 @@ fn main() {
     }
 
     if let Some(p) = fval(&v, &["context_window", "used_percentage"]) {
-        out.push_str(&format!("{}CTX {}%", sep(&out), p.round() as i64));
+        let p = p.round() as i64;
+        out.push_str(&format!("{}CTX {} {p}%", sep(&out), gauge(p)));
     }
 
     // projected depletion: sample usage over time, extrapolate burn rate to 100%
@@ -498,7 +518,8 @@ fn main() {
     if let Some((p, r)) = five {
         // the 5h window (usage + depletion forecast) is the headline metric, so
         // emphasize it in bold (\x1b[1m); the rest of the line stays default weight
-        let mut seg = format!("SESSION {}%", p.round() as i64);
+        let pi = p.round() as i64;
+        let mut seg = format!("SESSION {} {pi}%", gauge(pi));
         push_times(&mut seg, e5, r, now, "%H:%M");
         out.push_str(&format!("{}\x1b[1m{seg}\x1b[0m", sep(&out)));
     }
@@ -527,6 +548,19 @@ mod tests {
                 seven_reset: 0,
             })
             .collect()
+    }
+
+    #[test]
+    fn gauge_glyphs_and_colors() {
+        let g = |p| gauge(p);
+        assert_eq!(g(0), format!("\x1b[32m○{FG_RESET}"));
+        assert_eq!(g(35), format!("\x1b[32m◔{FG_RESET}"));
+        assert_eq!(g(50), format!("\x1b[32m◑{FG_RESET}"));
+        assert_eq!(g(68), format!("\x1b[33m◕{FG_RESET}"));
+        assert_eq!(g(97), format!("\x1b[31m●{FG_RESET}"));
+        // out-of-range input must not index past the glyph table
+        assert_eq!(g(140), format!("\x1b[31m●{FG_RESET}"));
+        assert_eq!(g(-5), format!("\x1b[32m○{FG_RESET}"));
     }
 
     #[test]
