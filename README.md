@@ -12,23 +12,25 @@ account, rate-limit consumption — and **predicts when your tokens will run out
 your live burn rate and your usage history.
 
 ```
-~/projects/foo | CPU ○ RAM ◔ | GPU ○ VRAM ◔ | DISK 21G | you | Fable 5 high | CTX ◔ | SESSION ◕ 66% (~20:29 / 23:52) | 09:48
+~/projects/foo | you Fable 5 high DISK 21G | CPU ○ RAM ◔ GPU ○ VRAM ◔ | CTX ◔ SESSION ◕ 66% (~20:29 / 23:52) | 09:48
 ```
 
-Fields are separated by ` | `. Related host metrics share a block, space-separated
-within it: CPU with RAM, GPU with VRAM. Fields whose source is unavailable are simply
-omitted; the clock is appended as the final segment.
+The line is the project path, three ` | `-separated blocks, and the clock: what this
+session *is* (account, model, disk headroom), what the *host* is doing (CPU, RAM,
+GPU, VRAM), and what the session has *spent* (context, rate limit). Fields inside a
+block are space-separated; fields whose source is unavailable are simply omitted, and
+a block loses its separator along with its last field.
 
 | Field | Source |
 |---|---|
 | `~/projects/foo` | project directory |
+| `you` | active Claude account — the part before the `@` of the signed-in email |
+| `Fable 5 high` | model and effort level |
+| `DISK 21G` | free space on the filesystem holding the project directory (`statvfs`) |
 | `CPU ○` | CPU usage since the previous refresh (`/proc/stat` delta; appears from the second invocation on) |
 | `RAM ◔` | used RAM, `MemAvailable` vs `MemTotal` from `/proc/meminfo` |
 | `GPU ○` | GPU utilization (first GPU, via `nvidia-smi`, cached — see below) |
 | `VRAM ◔` | used VRAM (memory.used vs memory.total) |
-| `DISK 21G` | free space on the filesystem holding the project directory (`statvfs`) |
-| `you` | active Claude account — the part before the `@` of the signed-in email |
-| `Fable 5 high` | model and effort level |
 | `CTX ◔` | context window usage of the current session |
 | `SESSION ◕ 66% (…)` | 5 h rate-limit usage with depletion forecast (see below) |
 | `09:48` | current local time |

@@ -397,6 +397,21 @@ fn sep(out: &str) -> &'static str {
     if out.is_empty() { "" } else { " | " }
 }
 
+// append a field to a ` `-separated block, or a whole block to the ` | `-separated line
+fn push_field(block: &mut String, field: &str) {
+    if !block.is_empty() {
+        block.push(' ');
+    }
+    block.push_str(field);
+}
+
+fn push_block(out: &mut String, block: &str) {
+    if !block.is_empty() {
+        out.push_str(sep(out));
+        out.push_str(block);
+    }
+}
+
 fn tilde(cwd: &str, home: Option<&str>) -> String {
     let home = home.filter(|h| !h.is_empty() && *h != "/");
     let home = home.map(|h| h.trim_end_matches('/'));
@@ -420,9 +435,32 @@ fn main() {
     let state = state_dir();
     let cwd = str_at(&v, &["cwd"]).filter(|s| !s.is_empty());
 
+    // the line is four ` | `-separated blocks between the path and the clock: who/what
+    // this session is, host load, token usage. Fields inside a block are space-separated,
+    // and a block whose fields are all unavailable disappears with its separator.
+    let mut ident = String::new();
+    let mut load = String::new();
+    let mut usage = String::new();
+
     if let Some(cwd) = cwd {
         let home = std::env::var("HOME").ok();
         out.push_str(&tilde(cwd, home.as_deref()));
+    }
+
+    if let Some(email) = account_email() {
+        let user = email.split('@').next().unwrap_or(&email);
+        push_field(&mut ident, user);
+    }
+
+    if let Some(model) = str_at(&v, &["model", "display_name"]).filter(|s| !s.is_empty()) {
+        push_field(&mut ident, model);
+        if let Some(e) = str_at(&v, &["effort", "level"]) {
+            push_field(&mut ident, e);
+        }
+    }
+
+    if let Some(free) = disk_free(cwd.unwrap_or("/")) {
+        push_field(&mut ident, &format!("DISK {}", fmt_bytes(free)));
     }
 
     let cpu = state.as_deref().and_then(cpu_pct);
@@ -430,46 +468,21 @@ fn main() {
         .ok()
         .as_deref()
         .and_then(meminfo_pct);
-    let mut sys = String::new();
     if let Some(p) = cpu {
-        sys.push_str(&format!("CPU {}", gauge(p)));
+        push_field(&mut load, &format!("CPU {}", gauge(p)));
     }
     if let Some(p) = ram {
-        sys.push_str(&format!(
-            "{}RAM {}",
-            if sys.is_empty() { "" } else { " " },
-            gauge(p)
-        ));
-    }
-    if !sys.is_empty() {
-        out.push_str(&format!("{}{sys}", sep(&out)));
+        push_field(&mut load, &format!("RAM {}", gauge(p)));
     }
     if let Some((gpu, vram)) = state.as_deref().and_then(|d| gpu_stats(d, now)) {
-        out.push_str(&format!(
-            "{}GPU {} VRAM {}",
-            sep(&out),
-            gauge(gpu),
-            gauge(vram)
-        ));
-    }
-    if let Some(free) = disk_free(cwd.unwrap_or("/")) {
-        out.push_str(&format!("{}DISK {}", sep(&out), fmt_bytes(free)));
-    }
-
-    if let Some(email) = account_email() {
-        let user = email.split('@').next().unwrap_or(&email);
-        out.push_str(&format!("{}{user}", sep(&out)));
-    }
-
-    if let Some(model) = str_at(&v, &["model", "display_name"]).filter(|s| !s.is_empty()) {
-        out.push_str(&format!("{}{model}", sep(&out)));
-        if let Some(e) = str_at(&v, &["effort", "level"]) {
-            out.push_str(&format!(" {e}"));
-        }
+        push_field(
+            &mut load,
+            &format!("GPU {} VRAM {}", gauge(gpu), gauge(vram)),
+        );
     }
 
     if let Some(p) = fval(&v, &["context_window", "used_percentage"]) {
-        out.push_str(&format!("{}CTX {}", sep(&out), gauge(p.round() as i64)));
+        push_field(&mut usage, &format!("CTX {}", gauge(p.round() as i64)));
     }
 
     // projected depletion: sample usage over time, extrapolate burn rate to 100%
@@ -520,10 +533,14 @@ fn main() {
         let pi = p.round() as i64;
         let mut seg = format!("SESSION {} {pi}%", gauge(pi));
         push_times(&mut seg, e5, r, now, "%H:%M");
-        out.push_str(&format!("{}\x1b[1m{seg}\x1b[0m", sep(&out)));
+        push_field(&mut usage, &format!("\x1b[1m{seg}\x1b[0m"));
     }
 
-    // clock last, appended directly after the session segment
+    push_block(&mut out, &ident);
+    push_block(&mut out, &load);
+    push_block(&mut out, &usage);
+
+    // clock last, appended directly after the usage block
     let clock = Local::now().format("%H:%M").to_string();
     out.push_str(&format!("{}{clock}", sep(&out)));
 
