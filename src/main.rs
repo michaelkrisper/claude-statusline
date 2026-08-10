@@ -384,6 +384,18 @@ fn sep(out: &str) -> &'static str {
     if out.is_empty() { "" } else { " | " }
 }
 
+fn tilde(cwd: &str, home: Option<&str>) -> String {
+    let home = home.filter(|h| !h.is_empty() && *h != "/");
+    let home = home.map(|h| h.trim_end_matches('/'));
+    match home {
+        Some(h) if cwd == h => "~".to_string(),
+        Some(h) if cwd.starts_with(h) && cwd.as_bytes().get(h.len()) == Some(&b'/') => {
+            format!("~{}", &cwd[h.len()..])
+        }
+        _ => cwd.to_string(),
+    }
+}
+
 fn main() {
     let mut buf = String::new();
     std::io::stdin().read_to_string(&mut buf).ok();
@@ -396,7 +408,8 @@ fn main() {
     let cwd = str_at(&v, &["cwd"]).filter(|s| !s.is_empty());
 
     if let Some(cwd) = cwd {
-        out.push_str(cwd);
+        let home = std::env::var("HOME").ok();
+        out.push_str(&tilde(cwd, home.as_deref()));
     }
 
     let cpu = state.as_deref().and_then(cpu_pct);
@@ -730,6 +743,21 @@ mod tests {
         assert_eq!(fmt_bytes(5 << 30), "5.0G");
         assert_eq!(fmt_bytes(897 << 30), "897G");
         assert_eq!(fmt_bytes(1536 << 30), "1.5T");
+    }
+
+    #[test]
+    fn tilde_abbreviates_home() {
+        assert_eq!(tilde("/home/mik", Some("/home/mik")), "~");
+        assert_eq!(tilde("/home/mik/", Some("/home/mik")), "~/");
+        assert_eq!(tilde("/home/mik/src", Some("/home/mik")), "~/src");
+        assert_eq!(tilde("/home/mik", Some("/home/mik/")), "~");
+        // no false prefix match on a sibling directory
+        assert_eq!(tilde("/home/mikael", Some("/home/mik")), "/home/mikael");
+        assert_eq!(tilde("/", Some("/home/mik")), "/");
+        assert_eq!(tilde("/etc", None), "/etc");
+        // a degenerate HOME must not swallow every path
+        assert_eq!(tilde("/etc", Some("/")), "/etc");
+        assert_eq!(tilde("/etc", Some("")), "/etc");
     }
 
     #[test]
