@@ -12,17 +12,20 @@ account, rate-limit consumption — and **predicts when your tokens will run out
 your live burn rate and your usage history.
 
 ```
-~/projects/foo | you Fable 5 high DISK 21G | CPU ○ RAM ◔ GPU ○ VRAM ◔ | CTX ◔ SESSION ◕ 66% (~20:29 / 23:52) | 09:48
+CTX ◔ SESSION ◕ 66% (~20:29 / 23:52) | 09:48 | ~/projects/foo | you Fable 5 high DISK 21G | CPU ○ RAM ◔ GPU ○ VRAM ◔
 ```
 
-The line is the project path, three ` | `-separated blocks, and the clock: what this
-session *is* (account, model, disk headroom), what the *host* is doing (CPU, RAM,
-GPU, VRAM), and what the session has *spent* (context, rate limit). Fields inside a
-block are space-separated; fields whose source is unavailable are simply omitted, and
-a block loses its separator along with its last field.
+The line is a sequence of ` | `-separated blocks, leading with what the session has
+*spent* (context, rate limit) and the clock, then the project path, what this session
+*is* (account, model, disk headroom), and what the *host* is doing (CPU, RAM, GPU,
+VRAM). Fields inside a block are space-separated; fields whose source is unavailable
+are simply omitted, and a block loses its separator along with its last field.
 
 | Field | Source |
 |---|---|
+| `CTX ◔` | context window usage of the current session |
+| `SESSION ◕ 66% (…)` | 5 h rate-limit usage with depletion forecast (see below) |
+| `09:48` | current local time |
 | `~/projects/foo` | project directory |
 | `you` | active Claude account — the part before the `@` of the signed-in email |
 | `Fable 5 high` | model and effort level |
@@ -31,9 +34,6 @@ a block loses its separator along with its last field.
 | `RAM ◔` | used RAM, `MemAvailable` vs `MemTotal` from `/proc/meminfo` |
 | `GPU ○` | GPU utilization (first GPU, via `nvidia-smi`, cached — see below) |
 | `VRAM ◔` | used VRAM (memory.used vs memory.total) |
-| `CTX ◔` | context window usage of the current session |
-| `SESSION ◕ 66% (…)` | 5 h rate-limit usage with depletion forecast (see below) |
-| `09:48` | current local time |
 
 Load percentages are shown as a gauge glyph rather than digits — a quarter-filled circle
 plus a color, encoding the value twice so it reads at a glance. Only `SESSION`, where the

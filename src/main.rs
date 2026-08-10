@@ -435,16 +435,18 @@ fn main() {
     let state = state_dir();
     let cwd = str_at(&v, &["cwd"]).filter(|s| !s.is_empty());
 
-    // the line is four ` | `-separated blocks between the path and the clock: who/what
-    // this session is, host load, token usage. Fields inside a block are space-separated,
-    // and a block whose fields are all unavailable disappears with its separator.
+    // the line is a sequence of ` | `-separated blocks: token usage first (the reason to
+    // look at all), then the clock, the path, who/what this session is, host load. Fields
+    // inside a block are space-separated, and a block whose fields are all unavailable
+    // disappears together with its separator.
+    let mut path = String::new();
     let mut ident = String::new();
     let mut load = String::new();
     let mut usage = String::new();
 
     if let Some(cwd) = cwd {
         let home = std::env::var("HOME").ok();
-        out.push_str(&tilde(cwd, home.as_deref()));
+        path.push_str(&tilde(cwd, home.as_deref()));
     }
 
     if let Some(email) = account_email() {
@@ -536,13 +538,11 @@ fn main() {
         push_field(&mut usage, &format!("\x1b[1m{seg}\x1b[0m"));
     }
 
+    push_block(&mut out, &usage);
+    push_block(&mut out, &Local::now().format("%H:%M").to_string());
+    push_block(&mut out, &path);
     push_block(&mut out, &ident);
     push_block(&mut out, &load);
-    push_block(&mut out, &usage);
-
-    // clock last, appended directly after the usage block
-    let clock = Local::now().format("%H:%M").to_string();
-    out.push_str(&format!("{}{clock}", sep(&out)));
 
     println!("{out}");
 }
