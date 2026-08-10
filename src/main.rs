@@ -422,7 +422,10 @@ fn main() {
         sys.push_str(&format!("CPU {p}%"));
     }
     if let Some(p) = ram {
-        sys.push_str(&format!("{}RAM {p}%", if sys.is_empty() { "" } else { " " }));
+        sys.push_str(&format!(
+            "{}RAM {p}%",
+            if sys.is_empty() { "" } else { " " }
+        ));
     }
     if !sys.is_empty() {
         out.push_str(&format!("{}{sys}", sep(&out)));
