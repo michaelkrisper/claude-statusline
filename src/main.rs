@@ -16,6 +16,7 @@ const GPU_REFRESH: i64 = 10; // nvidia-smi is re-queried at most this often
 const CTX_MIN: i64 = 50; // the CTX field stays hidden below this usage
 const URGENT_SECS: i64 = 15 * 60; // a 5h depletion ETA closer than this is flagged
 const URGENT: &str = "\x1b[91m"; // bright-red signal color on the ETA clock time
+const PATH_COLOR: &str = "\x1b[38;5;110m"; // muted steel blue, quiet against the metrics
 const FG_RESET: &str = "\x1b[39m"; // reset foreground only, preserving surrounding bold
 
 // quarter-filled circle in a green/yellow/red tint, so a load percentage reads at a
@@ -455,7 +456,10 @@ fn main() {
 
     if let Some(cwd) = cwd {
         let home = std::env::var("HOME").ok();
-        path.push_str(&tilde(cwd, home.as_deref()));
+        path.push_str(&format!(
+            "{PATH_COLOR}{}{FG_RESET}",
+            tilde(cwd, home.as_deref())
+        ));
     }
 
     if let Some(email) = account_email() {

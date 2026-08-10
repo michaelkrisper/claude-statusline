@@ -47,6 +47,11 @@ exact number matters for pacing, keeps its digits alongside the glyph.
 |---|---|---|---|
 | Value | below 60% | 60–84% | 85% and above |
 
+Colour elsewhere on the line is deliberately sparse, so that the gauges keep their
+signal value: the path is a muted steel blue (256-colour index 110), `SESSION` is bold,
+and a depletion ETA less than 15 minutes away turns bright red. Everything else stays in
+the terminal's default foreground.
+
 The host metrics (`cpu`, `ram`) come from `/proc` and are shown on Linux; `disk` on any
 Unix. Fields whose source is unavailable are simply omitted.
 
