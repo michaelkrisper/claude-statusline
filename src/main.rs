@@ -391,25 +391,25 @@ fn eta(
     Some(now + (((100.0 - cur) / rate).min(1e9) as i64))
 }
 
-// separator prefix: empty for the first field, a space once the line has content;
-// the per-field symbols carry the visual separation
-fn sep(out: &str) -> &'static str {
-    if out.is_empty() { "" } else { " | " }
+// append `part`, prefixed by `sep` unless it would lead the string. An empty part
+// contributes nothing, so an unavailable field never leaves a dangling separator.
+fn join(out: &mut String, sep: &str, part: &str) {
+    if part.is_empty() {
+        return;
+    }
+    if !out.is_empty() {
+        out.push_str(sep);
+    }
+    out.push_str(part);
 }
 
-// append a field to a ` `-separated block, or a whole block to the ` | `-separated line
+// a field inside a block is space-separated, a block on the line is ` | `-separated
 fn push_field(block: &mut String, field: &str) {
-    if !block.is_empty() {
-        block.push(' ');
-    }
-    block.push_str(field);
+    join(block, " ", field);
 }
 
 fn push_block(out: &mut String, block: &str) {
-    if !block.is_empty() {
-        out.push_str(sep(out));
-        out.push_str(block);
-    }
+    join(out, " | ", block);
 }
 
 fn tilde(cwd: &str, home: Option<&str>) -> String {
@@ -435,14 +435,18 @@ fn main() {
     let state = state_dir();
     let cwd = str_at(&v, &["cwd"]).filter(|s| !s.is_empty());
 
-    // the line is a sequence of ` | `-separated blocks: token usage first (the reason to
-    // look at all), then the clock, the path, who/what this session is, host load. Fields
-    // inside a block are space-separated, and a block whose fields are all unavailable
-    // disappears together with its separator.
+    // the line is the clock, then two ` | `-separated blocks: what this session is
+    // spending and where it runs, and what the host has left. Fields inside a block are
+    // space-separated; a field with no source contributes nothing, and a block whose
+    // fields are all unavailable disappears together with its separator.
+    let mut ctx = String::new();
     let mut path = String::new();
     let mut ident = String::new();
-    let mut load = String::new();
-    let mut usage = String::new();
+    let mut host = String::new();
+
+    if let Some(p) = fval(&v, &["context_window", "used_percentage"]) {
+        ctx.push_str(&format!("CTX {}", gauge(p.round() as i64)));
+    }
 
     if let Some(cwd) = cwd {
         let home = std::env::var("HOME").ok();
@@ -462,7 +466,7 @@ fn main() {
     }
 
     if let Some(free) = disk_free(cwd.unwrap_or("/")) {
-        push_field(&mut ident, &format!("DISK {}", fmt_bytes(free)));
+        push_field(&mut host, &format!("DISK {}", fmt_bytes(free)));
     }
 
     let cpu = state.as_deref().and_then(cpu_pct);
@@ -471,20 +475,16 @@ fn main() {
         .as_deref()
         .and_then(meminfo_pct);
     if let Some(p) = cpu {
-        push_field(&mut load, &format!("CPU {}", gauge(p)));
+        push_field(&mut host, &format!("CPU {}", gauge(p)));
     }
     if let Some(p) = ram {
-        push_field(&mut load, &format!("RAM {}", gauge(p)));
+        push_field(&mut host, &format!("RAM {}", gauge(p)));
     }
     if let Some((gpu, vram)) = state.as_deref().and_then(|d| gpu_stats(d, now)) {
         push_field(
-            &mut load,
+            &mut host,
             &format!("GPU {} VRAM {}", gauge(gpu), gauge(vram)),
         );
-    }
-
-    if let Some(p) = fval(&v, &["context_window", "used_percentage"]) {
-        push_field(&mut usage, &format!("CTX {}", gauge(p.round() as i64)));
     }
 
     // projected depletion: sample usage over time, extrapolate burn rate to 100%
@@ -529,20 +529,24 @@ fn main() {
         });
     }
 
+    let mut session = String::new();
     if let Some((p, r)) = five {
         // the 5h window (usage + depletion forecast) is the headline metric, so
         // emphasize it in bold (\x1b[1m); the rest of the line stays default weight
         let pi = p.round() as i64;
         let mut seg = format!("SESSION {} {pi}%", gauge(pi));
         push_times(&mut seg, e5, r, now, "%H:%M");
-        push_field(&mut usage, &format!("\x1b[1m{seg}\x1b[0m"));
+        session.push_str(&format!("\x1b[1m{seg}\x1b[0m"));
     }
 
-    push_block(&mut out, &usage);
-    push_block(&mut out, &Local::now().format("%H:%M").to_string());
-    push_block(&mut out, &path);
-    push_block(&mut out, &ident);
-    push_block(&mut out, &load);
+    out.push_str(&Local::now().format("%H:%M").to_string());
+
+    let mut what = String::new();
+    for f in [&ctx, &session, &path, &ident] {
+        push_field(&mut what, f);
+    }
+    push_block(&mut out, &what);
+    push_block(&mut out, &host);
 
     println!("{out}");
 }

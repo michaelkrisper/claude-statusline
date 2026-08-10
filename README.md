@@ -12,20 +12,20 @@ account, rate-limit consumption — and **predicts when your tokens will run out
 your live burn rate and your usage history.
 
 ```
-CTX ◔ SESSION ◕ 66% (~20:29 / 23:52) | 09:48 | ~/projects/foo | you Fable 5 high DISK 21G | CPU ○ RAM ◔ GPU ○ VRAM ◔
+09:48 | CTX ◔ SESSION ◕ 66% (~20:29 / 23:52) ~/projects/foo you Fable 5 high | DISK 21G CPU ○ RAM ◔ GPU ○ VRAM ◔
 ```
 
-The line is a sequence of ` | `-separated blocks, leading with what the session has
-*spent* (context, rate limit) and the clock, then the project path, what this session
-*is* (account, model, disk headroom), and what the *host* is doing (CPU, RAM, GPU,
-VRAM). Fields inside a block are space-separated; fields whose source is unavailable
-are simply omitted, and a block loses its separator along with its last field.
+The clock leads, followed by two ` | `-separated blocks: what this session is spending
+and where it runs (context, rate limit, path, account, model), then what the host has
+left (disk, CPU, RAM, GPU, VRAM). Fields inside a block are space-separated; a field
+whose source is unavailable is simply omitted, and a block whose fields are all
+unavailable disappears together with its separator.
 
 | Field | Source |
 |---|---|
+| `09:48` | current local time |
 | `CTX ◔` | context window usage of the current session |
 | `SESSION ◕ 66% (…)` | 5 h rate-limit usage with depletion forecast (see below) |
-| `09:48` | current local time |
 | `~/projects/foo` | project directory |
 | `you` | active Claude account — the part before the `@` of the signed-in email |
 | `Fable 5 high` | model and effort level |
