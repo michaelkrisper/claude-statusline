@@ -12,7 +12,7 @@ account, rate-limit consumption — and **predicts when your tokens will run out
 your live burn rate and your usage history.
 
 ```
-~/projects/foo | CPU 4% RAM 21% | GPU 7% VRAM 13% | DISK 21G | you | Fable 5 high | CTX 38% | SESSION 66% (~20:29 / 23:52) | 09:48
+~/projects/foo | CPU ○ 4% RAM ◔ 21% | GPU ○ 7% VRAM ◔ 13% | DISK 21G | you | Fable 5 high | CTX ◔ 38% | SESSION ◕ 66% (~20:29 / 23:52) | 09:48
 ```
 
 Fields are separated by ` | `. Related host metrics share a block, space-separated
@@ -22,16 +22,27 @@ omitted; the clock is appended as the final segment.
 | Field | Source |
 |---|---|
 | `~/projects/foo` | project directory |
-| `CPU 4%` | CPU usage since the previous refresh (`/proc/stat` delta; appears from the second invocation on) |
-| `RAM 21%` | used RAM, `MemAvailable` vs `MemTotal` from `/proc/meminfo` |
-| `GPU 7%` | GPU utilization (first GPU, via `nvidia-smi`, cached — see below) |
-| `VRAM 13%` | used VRAM (memory.used vs memory.total) |
+| `CPU ○ 4%` | CPU usage since the previous refresh (`/proc/stat` delta; appears from the second invocation on) |
+| `RAM ◔ 21%` | used RAM, `MemAvailable` vs `MemTotal` from `/proc/meminfo` |
+| `GPU ○ 7%` | GPU utilization (first GPU, via `nvidia-smi`, cached — see below) |
+| `VRAM ◔ 13%` | used VRAM (memory.used vs memory.total) |
 | `DISK 21G` | free space on the filesystem holding the project directory (`statvfs`) |
 | `you` | active Claude account — the part before the `@` of the signed-in email |
 | `Fable 5 high` | model and effort level |
-| `CTX 38%` | context window usage of the current session |
-| `SESSION 66% (…)` | 5 h rate-limit usage with depletion forecast (see below) |
+| `CTX ◔ 38%` | context window usage of the current session |
+| `SESSION ◕ 66% (…)` | 5 h rate-limit usage with depletion forecast (see below) |
 | `09:48` | current local time |
+
+Every percentage is prefixed by a gauge glyph that encodes the same value twice — as a
+quarter-filled circle and as a color — so load is readable before the digits are parsed:
+
+| Glyph | `○` | `◔` | `◑` | `◕` | `●` |
+|---|---|---|---|---|---|
+| Value | 0–12% | 13–37% | 38–62% | 63–87% | 88–100% |
+
+| Color | green | yellow | red |
+|---|---|---|---|
+| Value | below 60% | 60–84% | 85% and above |
 
 The host metrics (`cpu`, `ram`) come from `/proc` and are shown on Linux; `disk` on any
 Unix. Fields whose source is unavailable are simply omitted.
