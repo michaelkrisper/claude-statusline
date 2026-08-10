@@ -432,11 +432,11 @@ fn main() {
         .and_then(meminfo_pct);
     let mut sys = String::new();
     if let Some(p) = cpu {
-        sys.push_str(&format!("CPU {} {p}%", gauge(p)));
+        sys.push_str(&format!("CPU {}", gauge(p)));
     }
     if let Some(p) = ram {
         sys.push_str(&format!(
-            "{}RAM {} {p}%",
+            "{}RAM {}",
             if sys.is_empty() { "" } else { " " },
             gauge(p)
         ));
@@ -446,7 +446,7 @@ fn main() {
     }
     if let Some((gpu, vram)) = state.as_deref().and_then(|d| gpu_stats(d, now)) {
         out.push_str(&format!(
-            "{}GPU {} {gpu}% VRAM {} {vram}%",
+            "{}GPU {} VRAM {}",
             sep(&out),
             gauge(gpu),
             gauge(vram)
@@ -469,8 +469,7 @@ fn main() {
     }
 
     if let Some(p) = fval(&v, &["context_window", "used_percentage"]) {
-        let p = p.round() as i64;
-        out.push_str(&format!("{}CTX {} {p}%", sep(&out), gauge(p)));
+        out.push_str(&format!("{}CTX {}", sep(&out), gauge(p.round() as i64)));
     }
 
     // projected depletion: sample usage over time, extrapolate burn rate to 100%

@@ -12,7 +12,7 @@ account, rate-limit consumption — and **predicts when your tokens will run out
 your live burn rate and your usage history.
 
 ```
-~/projects/foo | CPU ○ 4% RAM ◔ 21% | GPU ○ 7% VRAM ◔ 13% | DISK 21G | you | Fable 5 high | CTX ◔ 38% | SESSION ◕ 66% (~20:29 / 23:52) | 09:48
+~/projects/foo | CPU ○ RAM ◔ | GPU ○ VRAM ◔ | DISK 21G | you | Fable 5 high | CTX ◔ | SESSION ◕ 66% (~20:29 / 23:52) | 09:48
 ```
 
 Fields are separated by ` | `. Related host metrics share a block, space-separated
@@ -22,19 +22,20 @@ omitted; the clock is appended as the final segment.
 | Field | Source |
 |---|---|
 | `~/projects/foo` | project directory |
-| `CPU ○ 4%` | CPU usage since the previous refresh (`/proc/stat` delta; appears from the second invocation on) |
-| `RAM ◔ 21%` | used RAM, `MemAvailable` vs `MemTotal` from `/proc/meminfo` |
-| `GPU ○ 7%` | GPU utilization (first GPU, via `nvidia-smi`, cached — see below) |
-| `VRAM ◔ 13%` | used VRAM (memory.used vs memory.total) |
+| `CPU ○` | CPU usage since the previous refresh (`/proc/stat` delta; appears from the second invocation on) |
+| `RAM ◔` | used RAM, `MemAvailable` vs `MemTotal` from `/proc/meminfo` |
+| `GPU ○` | GPU utilization (first GPU, via `nvidia-smi`, cached — see below) |
+| `VRAM ◔` | used VRAM (memory.used vs memory.total) |
 | `DISK 21G` | free space on the filesystem holding the project directory (`statvfs`) |
 | `you` | active Claude account — the part before the `@` of the signed-in email |
 | `Fable 5 high` | model and effort level |
-| `CTX ◔ 38%` | context window usage of the current session |
+| `CTX ◔` | context window usage of the current session |
 | `SESSION ◕ 66% (…)` | 5 h rate-limit usage with depletion forecast (see below) |
 | `09:48` | current local time |
 
-Every percentage is prefixed by a gauge glyph that encodes the same value twice — as a
-quarter-filled circle and as a color — so load is readable before the digits are parsed:
+Load percentages are shown as a gauge glyph rather than digits — a quarter-filled circle
+plus a color, encoding the value twice so it reads at a glance. Only `SESSION`, where the
+exact number matters for pacing, keeps its digits alongside the glyph.
 
 | Glyph | `○` | `◔` | `◑` | `◕` | `●` |
 |---|---|---|---|---|---|
