@@ -24,7 +24,7 @@ unavailable disappears together with its separator.
 | Field | Source |
 |---|---|
 | `09:48` | current local time |
-| `CTX ◑` | context window usage of the current session — hidden below 50%, where it is not yet a constraint |
+| `CTX ◑` | context window usage of the current session — always shown; turns yellow at 25%, red at 40% |
 | `SESSION ◕ 66% (…)` | 5 h rate-limit usage with depletion forecast (see below) |
 | `~/projects/foo` | project directory |
 | `you` | active Claude account — the part before the `@` of the signed-in email |

@@ -13,7 +13,6 @@ const HARVEST_MIN_SPAN: i64 = 900; // closed window must span this to yield a ra
 const HARVEST_MIN_PCT: f64 = 2.0;
 const RATES_KEEP: usize = 20;
 const GPU_REFRESH: i64 = 10; // nvidia-smi is re-queried at most this often
-const CTX_MIN: i64 = 50; // the CTX field stays hidden below this usage
 const URGENT_SECS: i64 = 15 * 60; // a 5h depletion ETA closer than this is flagged
 const URGENT: &str = "\x1b[91m"; // bright-red signal color on the ETA clock time
 const PATH_COLOR: &str = "\x1b[38;5;110m"; // muted steel blue, quiet against the metrics
@@ -21,15 +20,27 @@ const FG_RESET: &str = "\x1b[39m"; // reset foreground only, preserving surround
 
 // quarter-filled circle in a green/yellow/red tint, so a load percentage reads at a
 // glance before the digits are parsed. Foreground-only reset keeps surrounding bold.
-fn gauge(pct: i64) -> String {
+fn gauge_at(pct: i64, yellow: i64, red: i64) -> String {
     let p = pct.clamp(0, 100);
     let glyph = ['○', '◔', '◑', '◕', '●'][((p as f64) / 25.0).round() as usize];
-    let color = match p {
-        ..60 => "\x1b[32m",
-        60..85 => "\x1b[33m",
-        _ => "\x1b[31m",
+    let color = if p >= red {
+        "\x1b[31m"
+    } else if p >= yellow {
+        "\x1b[33m"
+    } else {
+        "\x1b[32m"
     };
     format!("{color}{glyph}{FG_RESET}")
+}
+
+fn gauge(pct: i64) -> String {
+    gauge_at(pct, 60, 85)
+}
+
+// CTX turns yellow earlier and red earlier than the other gauges, since a full context
+// window is more disruptive than a full CPU.
+fn ctx_gauge(pct: i64) -> String {
+    gauge_at(pct, 25, 40)
 }
 
 fn fval(v: &Value, path: &[&str]) -> Option<f64> {
@@ -446,12 +457,8 @@ fn main() {
     let mut ident = String::new();
     let mut host = String::new();
 
-    // context is only worth screen space once it starts constraining the session
-    if let Some(p) = fval(&v, &["context_window", "used_percentage"])
-        .map(|p| p.round() as i64)
-        .filter(|&p| p >= CTX_MIN)
-    {
-        ctx.push_str(&format!("CTX {}", gauge(p)));
+    if let Some(p) = fval(&v, &["context_window", "used_percentage"]).map(|p| p.round() as i64) {
+        ctx.push_str(&format!("CTX {}", ctx_gauge(p)));
     }
 
     if let Some(cwd) = cwd {
@@ -590,6 +597,14 @@ mod tests {
         // out-of-range input must not index past the glyph table
         assert_eq!(g(140), format!("\x1b[31m●{FG_RESET}"));
         assert_eq!(g(-5), format!("\x1b[32m○{FG_RESET}"));
+    }
+
+    #[test]
+    fn ctx_gauge_turns_yellow_at_25_red_at_40() {
+        assert_eq!(ctx_gauge(24), format!("\x1b[32m◔{FG_RESET}"));
+        assert_eq!(ctx_gauge(25), format!("\x1b[33m◔{FG_RESET}"));
+        assert_eq!(ctx_gauge(39), format!("\x1b[33m◑{FG_RESET}"));
+        assert_eq!(ctx_gauge(40), format!("\x1b[31m◑{FG_RESET}"));
     }
 
     #[test]
