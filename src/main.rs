@@ -258,6 +258,16 @@ fn fmt_bytes(b: u64) -> String {
     }
 }
 
+// token counts are only ever read as a magnitude, so kilo-tokens with no decimals is
+// the whole useful resolution; below 1k the raw count still fits in the same width.
+fn fmt_tokens(t: i64) -> String {
+    if t >= 1000 {
+        format!("{}k", (t as f64 / 1000.0).round() as i64)
+    } else {
+        t.to_string()
+    }
+}
+
 fn load_samples(path: &PathBuf) -> Vec<Sample> {
     std::fs::read_to_string(path)
         .unwrap_or_default()
@@ -459,6 +469,10 @@ fn main() {
 
     if let Some(p) = fval(&v, &["context_window", "used_percentage"]).map(|p| p.round() as i64) {
         ctx.push_str(&format!("CTX {}", ctx_gauge(p)));
+        // the same tokens the percentage is computed from, so gauge and count agree
+        if let Some(t) = ival(&v, &["context_window", "total_input_tokens"]) {
+            ctx.push_str(&format!(" {}", fmt_tokens(t)));
+        }
     }
 
     if let Some(cwd) = cwd {
@@ -824,6 +838,16 @@ mod tests {
         assert_eq!(fmt_bytes(5 << 30), "5.0G");
         assert_eq!(fmt_bytes(897 << 30), "897G");
         assert_eq!(fmt_bytes(1536 << 30), "1.5T");
+    }
+
+    #[test]
+    fn fmt_tokens_rounds_to_kilo() {
+        assert_eq!(fmt_tokens(0), "0");
+        assert_eq!(fmt_tokens(999), "999");
+        assert_eq!(fmt_tokens(1000), "1k");
+        assert_eq!(fmt_tokens(15_400), "15k");
+        assert_eq!(fmt_tokens(230_600), "231k");
+        assert_eq!(fmt_tokens(550_000), "550k");
     }
 
     #[test]
