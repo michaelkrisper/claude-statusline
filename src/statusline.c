@@ -1047,7 +1047,7 @@ int main(int argc, char **argv) {
                 if (n > 0) write_file(spath("samples.tsv"), line, (size_t)n, 1);
             }
         }
-        double prior;
+        double prior = 0.0;
         double *tmp = xmalloc((nr ? nr : 1) * sizeof *tmp);
         for (size_t i = 0; i < nr; i++) tmp[i] = rates[i].rate;
         int have_prior = median(tmp, nr, &prior);
