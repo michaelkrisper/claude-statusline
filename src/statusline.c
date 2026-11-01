@@ -883,20 +883,102 @@ static void put(int fd, const char *s, size_t n) {
     }
 }
 
+// ---------------------------------------------------------------- --bar
+
+// ANSI SGR as emitted above -> Pango markup for swaybar. Only the handful of codes
+// this program writes are known; spans nest the way the ANSI output opens them
+// (bold around colors), so closing in reverse order is always valid.
+static void ansi_pango(Out *o, const char *s) {
+    int bold = 0, span = 0;
+    while (*s) {
+        if (s[0] == '\x1b' && s[1] == '[') {
+            const char *m = strchr(s, 'm');
+            if (!m) break;
+            int code = atoi(s + 2);
+            const char *col = code == 31 || code == 91 ? "#f38ba8"
+                            : code == 33 ? "#f9e2af" : code == 32 ? "#a6e3a1" : NULL;
+            if (span && (col || code == 39 || code == 0)) { out_add(o, "</span>"); span = 0; }
+            if (col) { out_add(o, "<span foreground='%s'>", col); span = 1; }
+            if (code == 1 && !bold) { out_add(o, "<b>"); bold = 1; }
+            if (code == 0 && bold) { out_add(o, "</b>"); bold = 0; }
+            s = m + 1;
+        } else if (*s == '&') { out_add(o, "&amp;"); s++; }
+        else if (*s == '<') { out_add(o, "&lt;"); s++; }
+        else if (*s == '>') { out_add(o, "&gt;"); s++; }
+        else { out_add(o, "%c", *s); s++; }
+    }
+    if (span) out_add(o, "</span>");
+    if (bold) out_add(o, "</b>");
+}
+
+// write via a temp file + rename, so the bar never reads half a line
+static void bar_file(const char *dir, const char *name, const char *data) {
+    char path[4096], tmp[4200];
+    snprintf(path, sizeof path, "%s/%s", dir, name);
+    snprintf(tmp, sizeof tmp, "%s.%d", path, (int)getpid());
+    int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
+    if (fd < 0) return;
+    put(fd, data, strlen(data));
+    close(fd);
+    if (rename(tmp, path)) unlink(tmp);
+}
+
+// --bar: print nothing (Claude Code then shows no status line), name the terminal
+// after the working directory, and leave the numbers for the window manager's bar:
+//   $XDG_RUNTIME_DIR/claude-bar/<path, / as %>  context of this session
+//   $XDG_RUNTIME_DIR/claude-bar/limits          5 h window, account-wide
+// The bar looks up the focused window's title -- the same abbreviated path.
+static void bar_out(const char *abbr, const char *ctx, const char *session) {
+    if (abbr) {
+        int t = open("/dev/tty", O_WRONLY | O_NOCTTY | O_CLOEXEC);
+        if (t >= 0) {
+            Out ttl = out_new(256);
+            out_add(&ttl, "\x1b]2;%s\x07", abbr);
+            put(t, ttl.buf, ttl.len);
+            free(ttl.buf);
+            close(t);
+        }
+    }
+    const char *rt = getenv("XDG_RUNTIME_DIR");
+    if (!rt || !*rt) return;
+    char dir[4096];
+    snprintf(dir, sizeof dir, "%s/claude-bar", rt);
+    mkdir(dir, 0700);
+    if (abbr && *ctx) {
+        char key[1024];
+        snprintf(key, sizeof key, "%s", abbr);
+        for (char *k = key; *k; k++) if (*k == '/') *k = '%';
+        Out p = out_new(128);
+        ansi_pango(&p, ctx);
+        bar_file(dir, key, p.buf);
+        free(p.buf);
+    }
+    if (*session) {
+        Out p = out_new(256);
+        ansi_pango(&p, session);
+        bar_file(dir, "limits", p.buf);
+        free(p.buf);
+    }
+}
+
 static const char USAGE[] =
-    "usage: statusline [--simple]\n"
+    "usage: statusline [--simple | --bar]\n"
     "\n"
     "Reads the Claude Code session JSON on stdin and writes one status line.\n"
     "\n"
     "  --simple   context window, 5 h limit, path and GPU/VRAM only; omits the\n"
     "             clock, the account, the model and the remaining host metrics\n"
+    "  --bar      print nothing; set the terminal title to the path and leave\n"
+    "             context and 5 h limit in $XDG_RUNTIME_DIR/claude-bar for swaybar\n"
     "  -h, --help this text\n";
 
 int main(int argc, char **argv) {
-    int simple = 0;
+    int simple = 0, bar = 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--simple")) {
             simple = 1;
+        } else if (!strcmp(argv[i], "--bar")) {
+            simple = bar = 1;
         } else if (!strcmp(argv[i], "-h") || !strcmp(argv[i], "--help")) {
             put(1, USAGE, sizeof USAGE - 1);
             return 0;
@@ -934,12 +1016,12 @@ int main(int argc, char **argv) {
     }
 
     char *cwd = js_str(js_get(root, "cwd"));
+    char *abbr = NULL;
     if (cwd) {
         size_t n = strlen(cwd) + 2;
-        char *abbr = xmalloc(n);
+        abbr = xmalloc(n);
         tilde(abbr, n, cwd, getenv("HOME"));
         out_add(&path, PATH_COLOR "%s" FG_RESET, abbr);
-        free(abbr);
     }
 
     if (!simple) {
@@ -983,7 +1065,7 @@ int main(int argc, char **argv) {
     }
 
     long long gpu, vram;
-    if (have_state && gpu_stats(now, &gpu, &vram)) {
+    if (!bar && have_state && gpu_stats(now, &gpu, &vram)) {
         gauge(g, sizeof g, gpu);
         gauge(g2, sizeof g2, vram);
         snprintf(f, sizeof f, "GPU %s VRAM %s", g, g2);
@@ -1065,10 +1147,15 @@ int main(int argc, char **argv) {
         long long pi = (long long)llround(fp);
         gauge(g, sizeof g, pi);
         Out seg = out_new(160);
-        out_add(&seg, "SESSION %s %lld%%", g, pi);
+        out_add(&seg, bar ? "%s %lld%%" : "SESSION %s %lld%%", g, pi);  // no label in a WM bar
         push_times(&seg, have_eta, eta, fr, now);
         out_add(&session, "\x1b[1m%s\x1b[0m", seg.buf);
         free(seg.buf);
+    }
+
+    if (bar) {
+        bar_out(abbr, ctx.buf, session.buf);
+        return 0;
     }
 
     if (!simple && fmt_ts(f, sizeof f, now, "%H:%M")) out_add(&o, "%s", f);
