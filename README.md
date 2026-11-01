@@ -64,12 +64,14 @@ CTX ◑ 78k SESSION ◕ 66% (~20:29 / 23:52) ~/projects/foo | GPU ○ VRAM ◔
 ```
 
 `--bar` prints nothing, so Claude Code shows no status line at all, and hands the
-numbers to the window manager's bar instead: it sets the terminal title to the
-working directory (OSC 2 on `/dev/tty`; pair it with
-`CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` so Claude Code does not overwrite it) and
+numbers to the window manager's bar instead: it sets the terminal title to
+`<working directory>: <session title>` (OSC 2 on `/dev/tty`, or on an ancestor's
+terminal fd when Claude Code runs it without a controlling tty; the session title is
+the newest `/rename` or generated title in the transcript tail, else `claude`; pair it
+with `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` so Claude Code does not overwrite it) and
 writes Pango markup to `$XDG_RUNTIME_DIR/claude-bar/` — one file per session named
 after that path with `/` as `%` (the CTX field), plus `limits` (the SESSION field, without the word).
-A bar looks up the focused window's title to pick the right file; see
+A bar looks up the part of the focused window's title before `: ` to pick the right file; see
 [tuios-fedora](https://github.com/michaelkrisper/tuios-fedora) for a swaybar that does.
 
 `nvidia-smi` takes hundreds of milliseconds (notably on WSL2), so the GPU fields are

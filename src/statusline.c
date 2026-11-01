@@ -923,27 +923,100 @@ static void bar_file(const char *dir, const char *name, const char *data) {
     if (rename(tmp, path)) unlink(tmp);
 }
 
+// the terminal Claude Code draws on. Claude Code runs the status line without a
+// controlling terminal, so /dev/tty fails -- reopen a tty fd of an ancestor instead
+static int tty_open(void) {
+    int t = open("/dev/tty", O_WRONLY | O_NOCTTY | O_CLOEXEC);
+    if (t >= 0) return t;
+    pid_t pid = getppid();
+    for (int depth = 0; pid > 1 && depth < 8; depth++) {
+        char path[64];
+        for (int fd = 0; fd < 3; fd++) {
+            snprintf(path, sizeof path, "/proc/%d/fd/%d", (int)pid, fd);
+            t = open(path, O_WRONLY | O_NOCTTY | O_CLOEXEC);
+            if (t < 0) continue;
+            if (isatty(t)) return t;
+            close(t);
+        }
+        snprintf(path, sizeof path, "/proc/%d/stat", (int)pid);
+        char *st = read_file(path, NULL);
+        const char *rp = st ? strrchr(st, ')') : NULL;
+        int ppid = 0;
+        if (!rp || sscanf(rp + 1, " %*c %d", &ppid) != 1) ppid = 0;
+        free(st);
+        pid = ppid;
+    }
+    return -1;
+}
+
+// newest session title in the transcript tail: a /rename title beats the generated
+// one. Only the last 128 KiB are read; the title found there is cached under the
+// transcript's name, so it survives once long tool output pushes it out of the tail.
+static char *session_title(const char *dir, const char *transcript) {
+    char cache[8192];
+    const char *base = transcript ? strrchr(transcript, '/') : NULL;
+    if (!base) return NULL;
+    snprintf(cache, sizeof cache, "%s/title%%%s", dir, base + 1);
+    char *title = NULL;
+    int fd = open(transcript, O_RDONLY | O_CLOEXEC);
+    struct stat st;
+    if (fd >= 0 && !fstat(fd, &st)) {
+        off_t want = 128 << 10, off = st.st_size > want ? st.st_size - want : 0;
+        size_t n = (size_t)(st.st_size - off);
+        char *buf = xmalloc(n + 1);
+        ssize_t got = pread(fd, buf, n, off);
+        buf[got > 0 ? got : 0] = '\0';
+        const char *keys[2][2] = {{"\"type\":\"custom-title\"", "customTitle"},
+                                  {"\"type\":\"ai-title\"", "aiTitle"}};
+        for (int k = 0; k < 2 && !title; k++) {
+            char *line = NULL;
+            for (char *q = buf; (q = strstr(q, keys[k][0])); q++) line = q;
+            if (!line) continue;
+            while (line > buf && line[-1] != '\n') line--;
+            char *eol = strchr(line, '\n');
+            if (eol) *eol = '\0';
+            title = js_str(js_get(line, keys[k][1]));
+        }
+        free(buf);
+    }
+    if (fd >= 0) close(fd);
+    if (title) {
+        for (char *c = title; *c; c++) if ((unsigned char)*c < 0x20 || *c == 0x7f) *c = ' ';
+        char *old = read_file(cache, NULL);
+        if (!old || strcmp(old, title)) bar_file(dir, cache + strlen(dir) + 1, title);
+        free(old);
+    } else {
+        title = read_file(cache, NULL);
+        if (title && !*title) { free(title); title = NULL; }
+    }
+    return title;
+}
+
 // --bar: print nothing (Claude Code then shows no status line), name the terminal
 // after the working directory, and leave the numbers for the window manager's bar:
 //   $XDG_RUNTIME_DIR/claude-bar/<path, / as %>  context of this session
 //   $XDG_RUNTIME_DIR/claude-bar/limits          5 h window, account-wide
 // The bar looks up the focused window's title -- the same abbreviated path.
-static void bar_out(const char *abbr, const char *ctx, const char *session) {
+// The title is "<path>: <session title>"; the bar keys on the part before ": ".
+static void bar_out(const char *abbr, const char *ctx, const char *session,
+                    const char *transcript) {
+    const char *rt = getenv("XDG_RUNTIME_DIR");
+    char dir[4096];
+    snprintf(dir, sizeof dir, "%s/claude-bar", rt && *rt ? rt : "");
+    if (rt && *rt) mkdir(dir, 0700);
     if (abbr) {
-        int t = open("/dev/tty", O_WRONLY | O_NOCTTY | O_CLOEXEC);
+        int t = tty_open();
         if (t >= 0) {
+            char *name = rt && *rt ? session_title(dir, transcript) : NULL;
             Out ttl = out_new(256);
-            out_add(&ttl, "\x1b]2;%s\x07", abbr);
+            out_add(&ttl, "\x1b]2;%s: %s\x07", abbr, name ? name : "claude");
             put(t, ttl.buf, ttl.len);
             free(ttl.buf);
+            free(name);
             close(t);
         }
     }
-    const char *rt = getenv("XDG_RUNTIME_DIR");
     if (!rt || !*rt) return;
-    char dir[4096];
-    snprintf(dir, sizeof dir, "%s/claude-bar", rt);
-    mkdir(dir, 0700);
     if (abbr && *ctx) {
         char key[1024];
         snprintf(key, sizeof key, "%s", abbr);
@@ -1154,7 +1227,9 @@ int main(int argc, char **argv) {
     }
 
     if (bar) {
-        bar_out(abbr, ctx.buf, session.buf);
+        char *transcript = js_str(js_get(root, "transcript_path"));
+        bar_out(abbr, ctx.buf, session.buf, transcript);
+        free(transcript);
         return 0;
     }
 
