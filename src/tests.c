@@ -369,7 +369,10 @@ static void test_scanners(void) {
     static const char *cases[] = {"0",   "21",   "-1",     "66.4",  "0.01",  "100",
                                   "3.5", "0.5",  "99.999", "1e-3",  "-0.25", "0.1",
                                   "2.675", "1234567890.123456", "0.000001",
-                                  "12345678901234567890.5", "1.7976931348623157e308"};
+                                  "12345678901234567890.5", "1.7976931348623157e308",
+                                  // 17-18 digit mantissas exceed 2^53: no fast path
+                                  "52.6249761067820120", "6791824.56437180765",
+                                  "34668943.3999117490", "9007199254740993"};
     for (size_t i = 0; i < sizeof cases / sizeof *cases; i++) {
         const char *p = cases[i];
         double got;
@@ -387,6 +390,38 @@ static void test_scanners(void) {
     CHECK(scan_ll(&p, &v) && v == -42);
     CHECK(scan_ll(&p, &v) && v == 7);
     CHECK(!scan_ll(&p, &v));
+}
+
+static void test_json_unicode(void) {
+    // a surrogate pair is one code point: U+1F600 as 4-byte UTF-8, not two 3-byte halves
+    char *s = js_str("\"a\\ud83d\\ude00b\"");
+    CHECK(s && !strcmp(s, "a\xF0\x9F\x98\x80" "b"));
+    free(s);
+    s = js_str("\"\\uD83D\\uDE00\"");  // hex digits are case-insensitive
+    CHECK(s && !strcmp(s, "\xF0\x9F\x98\x80"));
+    free(s);
+    // a lone high surrogate is passed through, and must not consume the next escape
+    s = js_str("\"\\ud83d\\n\"");
+    CHECK(s && !strcmp(s, "\xED\xA0\xBD\n"));
+    free(s);
+    s = js_str("\"\\u20ac\"");  // 3-byte BMP code point
+    CHECK(s && !strcmp(s, "\xE2\x82\xAC"));
+    free(s);
+}
+
+static void test_js_skip(void) {
+    // values holding brackets, braces and escaped quotes inside strings are skipped
+    // whole, so a later key is still found at the right nesting level
+    const char *j = "{\"a\":[1,{\"b\":\"}]\"},[2]],\"s\":\"x\\\"}\",\"n\":-3.5,\"t\":true,"
+                    "\"k\":{\"k\":1},\"want\":7}";
+    double d;
+    CHECK(js_num(js_get(j, "want"), &d) && d == 7.0);
+    CHECK(js_num(js_get(j, "n"), &d) && d == -3.5);
+    CHECK(!js_num(js_get(j, "t"), &d));
+    CHECK(js_num(js_get(js_get(j, "k"), "k"), &d) && d == 1.0);
+    CHECK(!js_get(j, "b"));
+    // whitespace between tokens, as in pretty-printed input
+    CHECK(js_num(js_get(" {\n \"x\" : 4 ,\r\n \"y\"\t:\t5 }", "y"), &d) && d == 5.0);
 }
 
 static void test_fmt_f64(void) {
@@ -439,6 +474,8 @@ int main(void) {
     test_tilde();
     test_blocks();
     test_json();
+    test_json_unicode();
+    test_js_skip();
     test_scanners();
     test_fmt_f64();
     test_load_samples();
