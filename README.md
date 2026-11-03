@@ -15,6 +15,12 @@ your live burn rate and your usage history.
 09:48 | CTX ◑ 78k SESSION ◕ 66% (~20:29 / 23:52) ~/projects/foo you Fable 5 high | DISK 21G CPU ○ RAM ◔ GPU ○ VRAM ◔
 ```
 
+- Context-window gauge with token count, and the 5 h rate limit with a depletion forecast
+- Host metrics: free disk, CPU, RAM, GPU and VRAM (cached, never blocks on `nvidia-smi`)
+- Active account, model and effort level
+- `--simple` for a session-only line, `--bar` to feed a window-manager bar instead
+- One static ~95 KB binary, no dependencies, about 1 ms per refresh; Linux and macOS
+
 The clock leads, followed by two ` | `-separated blocks: what this session is spending
 and where it runs (context, rate limit, path, account, model), then what the host has
 left (disk, CPU, RAM, GPU, VRAM). Fields inside a block are space-separated; a field
@@ -221,14 +227,20 @@ git tag v0.1.1 && git push origin v0.1.1
 
 ## Development
 
+Requires a C11 compiler and `make`; `musl-tools` (Debian/Ubuntu) for the static build.
+
 ```sh
-make test    # unit tests for regression, blending, harvesting, compaction, parsing
-make         # build; uses musl-gcc when available
+make             # build; uses musl-gcc when available
+make test        # unit tests: regression, blending, harvesting, compaction, JSON, parsers
+make lint        # strict warning set (-Wpedantic, -Wshadow, ...) as errors; CC=clang also works
+make sanitize    # unit tests under AddressSanitizer and UBSan (system compiler)
 ```
 
 The whole program is `src/statusline.c`; `src/tests.c` includes it with `-DSL_TEST` so
-the tests can reach the static functions.
+the tests can reach the static functions. CI runs lint with gcc and clang, the
+tests and a `-Werror` build on Linux and macOS, and the sanitizer run on Linux; a tag only
+publishes release binaries after that passes.
 
 ## License
 
-MIT
+[MIT](LICENSE)
