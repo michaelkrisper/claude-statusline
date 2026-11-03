@@ -4,17 +4,39 @@ on:
   push:
     branches: [main]
   pull_request:
+    branches: [main]
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cc: [gcc, clang]
     steps:
-      - uses: actions/checkout@v4
-      - name: install musl toolchain
+      - uses: actions/checkout@v7
+      - run: make lint CC=${{ matrix.cc }}
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install musl toolchain
+        if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: make test
-      # the release binary is built static against musl; -Werror keeps the build honest
+      - name: Tests under AddressSanitizer and UBSan
+        if: runner.os == 'Linux'
+        run: make sanitize
+      # the release binary is built the same way; -Werror keeps the build honest
       - run: make clean && make CFLAGS='-std=c11 -O2 -Wall -Wextra -Werror -ffunction-sections -fdata-sections'
       - run: ./statusline --help
-      - name: smoke test
+      - name: Smoke test
         run: echo '{"cwd":"/tmp","context_window":{"used_percentage":12.5}}' | ./statusline

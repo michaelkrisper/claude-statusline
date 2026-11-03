@@ -1,9 +1,9 @@
 name: Dependabot auto-merge
 
-# Mergt Dependabot-PRs, sobald die CI auf dem PR grün ist (auch Major-Updates).
-# Ohne GitHub Pro gibt es für private Repos keine Pflicht-Checks, deshalb wartet
-# dieser Workflow selbst auf den erfolgreichen CI-Lauf. Kein Deploy auf main,
-# Releases laufen über Tags.
+# Merges Dependabot PRs once CI on the PR is green (major updates included).
+# Without GitHub Pro, private repos have no required status checks, so this
+# workflow waits for the successful CI run itself. Nothing deploys from main;
+# releases are cut from tags.
 
 on:
   workflow_run:
@@ -27,13 +27,13 @@ jobs:
       SHA: ${{ github.event.workflow_run.head_sha }}
       BRANCH: ${{ github.event.workflow_run.head_branch }}
     steps:
-      - name: Mergen
+      - name: Merge
         run: |
           set -euo pipefail
           pr=$(gh pr list --head "$BRANCH" --state open --json number,author \
             --jq '.[] | select(.author.login == "app/dependabot") | .number')
           if [ -z "$pr" ]; then
-            echo "Kein offener Dependabot-PR für $BRANCH"
+            echo "No open Dependabot PR for $BRANCH"
             exit 0
           fi
           gh pr merge "$pr" --squash --match-head-commit "$SHA"
