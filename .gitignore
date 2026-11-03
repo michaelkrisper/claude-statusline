@@ -1,3 +1,6 @@
-/target
-statusline
-tests
+# build outputs
+/statusline
+/tests
+/tests-san
+*.o
+*.dSYM/
