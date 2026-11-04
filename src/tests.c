@@ -182,6 +182,33 @@ static void test_push_times(void) {
     free(o.buf);
 }
 
+static void test_push_week(void) {
+    const long long day = 86400;
+    Out o = out_new(256);
+    // halfway through the window: the average burn doubles the percentage
+    push_week(&o, 25.0, NOW + 3 * day + day / 2, NOW);
+    CHECK(strstr(o.buf, " 25% → ~50%") && !strstr(o.buf, URGENT));
+
+    // on course past the limit: the forecast is flagged, and the color does not leak
+    o.len = 0;
+    o.buf[0] = '\0';
+    push_week(&o, 80.0, NOW + 2 * day, NOW);
+    CHECK(strstr(o.buf, " 80% → ~" URGENT "112%" FG_RESET));
+
+    // under a day in: too early for a forecast
+    o.len = 0;
+    o.buf[0] = '\0';
+    push_week(&o, 5.0, NOW + 6 * day + day / 2, NOW);
+    CHECK(strstr(o.buf, " 5%") && !strstr(o.buf, "→"));
+
+    // the reset has passed: the window is over, nothing to forecast
+    o.len = 0;
+    o.buf[0] = '\0';
+    push_week(&o, 54.6, NOW, NOW);
+    CHECK(strstr(o.buf, " 55%") && !strstr(o.buf, "→"));
+    free(o.buf);
+}
+
 static void test_parse_gpu_csv(void) {
     long long g, v;
     CHECK(parse_gpu_csv("7, 2126, 16303\n", &g, &v) && g == 7 && v == 13);
@@ -463,6 +490,7 @@ int main(void) {
     test_harvest();
     test_compact();
     test_push_times();
+    test_push_week();
     test_parse_gpu_csv();
     test_parse_cpu_totals();
     test_meminfo_pct();

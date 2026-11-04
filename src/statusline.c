@@ -799,6 +799,20 @@ static void gauge(char *dst, size_t n, long long pct) { gauge_at(dst, n, pct, 60
 // window is more disruptive than a full CPU.
 static void ctx_gauge(char *dst, size_t n, long long pct) { gauge_at(dst, n, pct, 25, 40); }
 
+// gauge, percentage, and where the percentage ends up at the reset if this window's
+// average burn holds. Less than a day in, the daily rhythm dominates that average,
+// so there is no forecast yet.
+static void push_week(Out *o, double used, long long reset, long long now) {
+    const long long day = 86400, week = 7 * day;
+    char g[32];
+    long long pi = (long long)llround(used), elapsed = now - (reset - week);
+    gauge(g, sizeof g, pi);
+    out_add(o, "%s %lld%%", g, pi);
+    if (elapsed < day || elapsed >= week) return;
+    long long proj = (long long)llround(used * (double)week / (double)elapsed);
+    out_add(o, proj >= 100 ? " → ~" URGENT "%lld%%" FG_RESET : " → ~%lld%%", proj);
+}
+
 static void fmt_tokens(char *dst, size_t n, long long t) {
     if (t >= 1000) snprintf(dst, n, "%lldk", (long long)llround((double)t / 1000.0));
     else snprintf(dst, n, "%lld", t);
@@ -1012,14 +1026,10 @@ static char *session_title(const char *dir, const char *transcript) {
     return title;
 }
 
-// --bar: print nothing (Claude Code then shows no status line), name the terminal
-// after the working directory, and leave the numbers for the window manager's bar:
-//   $XDG_RUNTIME_DIR/claude-bar/<path, / as %>  context of this session
-//   $XDG_RUNTIME_DIR/claude-bar/limits          5 h window, account-wide
-// The bar looks up the focused window's title -- the same abbreviated path.
-// The title is "<path>: <session title>"; the bar keys on the part before ": ".
-static void bar_out(const char *abbr, const char *ctx, const char *session,
-                    const char *transcript) {
+// --bar: print nothing (Claude Code then shows no status line), title the terminal
+// "<path>: <session title>", and leave the account-wide weekly limit for the window
+// manager's bar in $XDG_RUNTIME_DIR/claude-bar/limits.
+static void bar_out(const char *abbr, const char *limits, const char *transcript) {
     const char *rt = getenv("XDG_RUNTIME_DIR");
     char dir[4096];
     snprintf(dir, sizeof dir, "%s/claude-bar", rt && *rt ? rt : "");
@@ -1037,18 +1047,9 @@ static void bar_out(const char *abbr, const char *ctx, const char *session,
         }
     }
     if (!rt || !*rt) return;
-    if (abbr && *ctx) {
-        char key[1024];
-        snprintf(key, sizeof key, "%s", abbr);
-        for (char *k = key; *k; k++) if (*k == '/') *k = '%';
-        Out p = out_new(128);
-        ansi_pango(&p, ctx);
-        bar_file(dir, key, p.buf);
-        free(p.buf);
-    }
-    if (*session) {
+    if (*limits) {
         Out p = out_new(256);
-        ansi_pango(&p, session);
+        ansi_pango(&p, limits);
         bar_file(dir, "limits", p.buf);
         free(p.buf);
     }
@@ -1062,7 +1063,7 @@ static const char USAGE[] =
     "  --simple   context window, 5 h limit, path and GPU/VRAM only; omits the\n"
     "             clock, the account, the model and the remaining host metrics\n"
     "  --bar      print nothing; set the terminal title to the path and leave\n"
-    "             context and 5 h limit in $XDG_RUNTIME_DIR/claude-bar for swaybar\n"
+    "             the weekly limit in $XDG_RUNTIME_DIR/claude-bar for swaybar\n"
     "  -h, --help this text\n";
 
 int main(int argc, char **argv) {
@@ -1177,7 +1178,7 @@ int main(int argc, char **argv) {
     // projected depletion: sample usage over time, extrapolate burn rate to 100%
     int have_eta = 0;
     long long eta = 0;
-    if (have5 && have_state) {
+    if (!bar && have5 && have_state) {
         size_t ns, nr, rcap;
         int clean;
         Sample *samples = load_samples(&ns, &clean);
@@ -1232,7 +1233,7 @@ int main(int argc, char **argv) {
         free(rates);
     }
 
-    if (have5) {
+    if (!bar && have5) {
         // the 5h window (usage + depletion forecast) is the headline metric, so
         // emphasize it in bold (\x1b[1m); the rest of the line stays default weight.
         // It is also the one gauge that keeps its digits -- the exact number matters
@@ -1240,16 +1241,23 @@ int main(int argc, char **argv) {
         long long pi = (long long)llround(fp);
         gauge(g, sizeof g, pi);
         Out seg = out_new(160);
-        out_add(&seg, bar ? "%s %lld%%" : "SESSION %s %lld%%", g, pi);  // no label in a WM bar
+        out_add(&seg, "SESSION %s %lld%%", g, pi);
         push_times(&seg, have_eta, eta, fr, now);
         out_add(&session, "\x1b[1m%s\x1b[0m", seg.buf);
         free(seg.buf);
     }
 
     if (bar) {
+        Out week = out_new(96), limits = out_new(128);
+        if (have7) {
+            push_week(&week, sp, sr, now);
+            out_add(&limits, "\x1b[1m%s\x1b[0m", week.buf);
+        }
         char *transcript = js_str(js_get(root, "transcript_path"));
-        bar_out(abbr, ctx.buf, session.buf, transcript);
+        bar_out(abbr, limits.buf, transcript);
         free(transcript);
+        free(week.buf);
+        free(limits.buf);
         return 0;
     }
 

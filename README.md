@@ -75,10 +75,10 @@ numbers to the window manager's bar instead: it sets the terminal title to
 terminal fd when Claude Code runs it without a controlling tty; the session title is
 the newest `/rename` or generated title in the transcript tail, else `claude`; pair it
 with `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` so Claude Code does not overwrite it) and
-writes Pango markup to `$XDG_RUNTIME_DIR/claude-bar/` — one file per session named
-after that path with `/` as `%` (the CTX field), plus `limits` (the SESSION field, without the word).
-A bar looks up the part of the focused window's title before `: ` to pick the right file; see
-[tuios-fedora](https://github.com/michaelkrisper/tuios-fedora) for a swaybar that does.
+writes the account's weekly limit as Pango markup to `$XDG_RUNTIME_DIR/claude-bar/limits`:
+gauge, percentage and the percentage projected for the reset, assuming this window's
+average burn holds (`25% → ~52%`; red from 100 %, no forecast in the first 24 h); see
+[tuios-fedora](https://github.com/michaelkrisper/tuios-fedora) for a swaybar that reads it.
 
 `nvidia-smi` takes hundreds of milliseconds (notably on WSL2), so the GPU fields are
 never queried inline: at most every 10 s a **detached** background child refreshes
