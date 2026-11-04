@@ -1,12 +1,13 @@
-// Claude Code status line, C port of src/main.rs.
+// Claude Code status line.
 //
-// Fields: project dir, GPU/VRAM (cached), context window, 5 h rate limit with
-// depletion forecast. Model name and clock are deliberately absent -- without the
-// clock no terminal-width probing and no display-width accounting is needed.
+// Reads the session JSON Claude Code passes on stdin and writes one line: clock,
+// context window, 5 h rate limit with depletion forecast, path, account and model,
+// then free disk, CPU, RAM and GPU/VRAM. `--simple` and `--bar` trim or redirect it.
 //
-// Optimized for per-invocation cost, in this order of impact: parsing the sample
-// log (up to 4320 rows), syscall count, process startup. Build static against
-// musl (see Makefile) -- that removes the dynamic loader from every invocation.
+// Optimized for per-invocation cost, since Claude Code spawns a fresh process on
+// every refresh: the sample log holds only what the forecast reads, state files are
+// read with one syscall each, and the build links static against musl (see
+// Makefile) -- that removes the dynamic loader from every invocation.
 
 #define _GNU_SOURCE
 #include <ctype.h>
@@ -171,7 +172,8 @@ static int scan_ll(const char **p, long long *out) {
 // 4320 sample rows x 2 floats is milliseconds. The sample and rate files only ever
 // hold short decimals, where mantissa/10^frac is exact in binary64 (both operands
 // are representable, so IEEE division rounds correctly) -- Clinger's fast path,
-// bit-identical to strtod and ~20x cheaper. Anything longer falls back to strtod.
+// bit-identical to strtod and ~20x cheaper. The mantissa must fit binary64's 53 bits
+// for that to hold; anything longer falls back to strtod.
 static int scan_f64(const char **p, double *out) {
     const char *s = *p;
     while (*s == ' ' || *s == '\t') s++;
@@ -192,7 +194,7 @@ static int scan_f64(const char **p, double *out) {
             frac++;
         }
     }
-    if (digits && digits < 19 && frac < (int)(sizeof POW10 / sizeof *POW10) && *s != 'e' &&
+    if (digits && digits < 19 && m <= 1ULL << 53 && frac < (int)(sizeof POW10 / sizeof *POW10) && *s != 'e' &&
         *s != 'E') {
         double v = (double)m / POW10[frac];
         *out = neg ? -v : v;
@@ -308,6 +310,16 @@ static int js_num(const char *v, double *out) {
     return scan_f64(&v, out);
 }
 
+// the four hex digits of a \u escape at p, stopping at `end`
+static unsigned js_hex4(const char *p, const char *end) {
+    unsigned cp = 0;
+    for (int i = 0; i < 4 && p + i < end; i++)
+        cp = cp * 16 + (unsigned)(isdigit((unsigned char)p[i])
+                                      ? p[i] - '0'
+                                      : (tolower((unsigned char)p[i]) - 'a' + 10));
+    return cp;
+}
+
 // decoded string value into a fresh buffer, NULL unless `v` is a non-empty string
 static char *js_str(const char *v) {
     if (!v || *v != '"') return NULL;
@@ -326,19 +338,27 @@ static char *js_str(const char *v) {
             case 'b': *d++ = '\b'; p++; break;
             case 'f': *d++ = '\f'; p++; break;
             case 'u': {
-                unsigned cp = 0;
-                for (int i = 1; i <= 4 && p + i < end; i++)
-                    cp = cp * 16 + (unsigned)(isdigit((unsigned char)p[i])
-                                                  ? p[i] - '0'
-                                                  : (tolower((unsigned char)p[i]) - 'a' + 10));
+                unsigned cp = js_hex4(p + 1, end);
                 p += 5;
+                // a UTF-16 surrogate pair encodes one code point above U+FFFF
+                unsigned lo =
+                    p + 1 < end && p[0] == '\\' && p[1] == 'u' ? js_hex4(p + 2, end) : 0;
+                if (cp >= 0xD800 && cp < 0xDC00 && lo >= 0xDC00 && lo < 0xE000) {
+                    cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+                    p += 6;
+                }
                 if (cp < 0x80) {
                     *d++ = (char)cp;
                 } else if (cp < 0x800) {
                     *d++ = (char)(0xC0 | cp >> 6);
                     *d++ = (char)(0x80 | (cp & 0x3F));
-                } else {
+                } else if (cp < 0x10000) {
                     *d++ = (char)(0xE0 | cp >> 12);
+                    *d++ = (char)(0x80 | (cp >> 6 & 0x3F));
+                    *d++ = (char)(0x80 | (cp & 0x3F));
+                } else {
+                    *d++ = (char)(0xF0 | cp >> 18);
+                    *d++ = (char)(0x80 | (cp >> 12 & 0x3F));
                     *d++ = (char)(0x80 | (cp >> 6 & 0x3F));
                     *d++ = (char)(0x80 | (cp & 0x3F));
                 }
