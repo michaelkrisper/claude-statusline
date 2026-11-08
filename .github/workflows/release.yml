@@ -1,20 +1,52 @@
 name: Release
 
+# Bundles everything merged since the last release: tags main with the next
+# minor or major version and publishes a GitHub release listing the merged
+# pull requests and closed tickets, then builds the portable binaries from the
+# new tag and attaches them. Patch versions are tagged automatically by CI on
+# every merge and get no release of their own.
+
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version part to increase
+        type: choice
+        options: [minor, major]
+        default: minor
 
 permissions:
-  contents: read
+  actions: write
+  contents: write
+  issues: read
+  pull-requests: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  ci:
-    uses: ./.github/workflows/ci.yml
-
   release:
-    needs: ci
-    permissions:
-      contents: write
+    name: Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: release
+        run: python3 .github/scripts/release.py release "$BUMP"
+        env:
+          BUMP: ${{ inputs.bump }}
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          # Workflows to start on main afterwards, e.g. a deploy that stamps the
+          # version into the app. Empty: none.
+          DISPATCH: ""
+
+  binaries:
+    needs: release
     strategy:
       matrix:
         include:
@@ -34,14 +66,14 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.release.outputs.version }}
       - if: matrix.musl
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - run: make test
       - run: make clean && make
       - run: cp statusline "${{ matrix.asset }}"
-      - run: gh release create "$GITHUB_REF_NAME" --generate-notes || true
+      - run: gh release upload "$VERSION" "${{ matrix.asset }}" --clobber
         env:
           GH_TOKEN: ${{ github.token }}
-      - run: gh release upload "$GITHUB_REF_NAME" "${{ matrix.asset }}" --clobber
-        env:
-          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.release.outputs.version }}
