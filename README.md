@@ -1,6 +1,7 @@
 # claude-statusline
 
 [![CI](https://github.com/michaelkrisper/claude-statusline/actions/workflows/ci.yml/badge.svg)](https://github.com/michaelkrisper/claude-statusline/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/tag/michaelkrisper/claude-statusline?sort=semver&label=version)](https://github.com/michaelkrisper/claude-statusline/releases)
 [![Release](https://img.shields.io/github/v/release/michaelkrisper/claude-statusline)](https://github.com/michaelkrisper/claude-statusline/releases/latest)
 [![License: MIT](https://img.shields.io/github/license/michaelkrisper/claude-statusline)](LICENSE)
 [![Platforms](https://img.shields.io/badge/platform-linux%20%7C%20macos-blue)](https://github.com/michaelkrisper/claude-statusline/releases/latest)
@@ -217,13 +218,12 @@ run, so the history carries over.
 
 ## Versioning & releases
 
-[SemVer](https://semver.org/): breaking output-format changes bump minor (pre-1.0) /
-major, everything else patch. A release is cut by pushing a tag — CI builds the
-portable binary and attaches it:
-
-```sh
-git tag v0.1.1 && git push origin v0.1.1
-```
+[SemVer](https://semver.org/), with git tags as the only version source: CI tags every
+merge to `main` with the next patch version. A release bundles the changes since the
+previous one: _Actions → Release → Run workflow_, `minor` for new features and (before
+1.0) breaking output-format changes, `major` for breaking changes after 1.0. It publishes
+the release notes, then builds the portable binaries from the new tag and attaches them;
+patch tags get no binaries. Details in [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Development
 
@@ -238,8 +238,8 @@ make sanitize    # unit tests under AddressSanitizer and UBSan (system compiler)
 
 The whole program is `src/statusline.c`; `src/tests.c` includes it with `-DSL_TEST` so
 the tests can reach the static functions. CI runs lint with gcc and clang, the
-tests and a `-Werror` build on Linux and macOS, and the sanitizer run on Linux; a tag only
-publishes release binaries after that passes.
+tests and a `-Werror` build on Linux and macOS, and the sanitizer run on Linux; the
+Release workflow runs the tests again on every platform before it attaches a binary.
 
 ## License
 
